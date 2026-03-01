@@ -1,0 +1,10 @@
+# GRAB dataset folder cloned and downloaded from official repository
+GRAB/
+# SMPL-X dataset folder downloaded from official repository
+models/
+# Related Papers
+Papers/
+# Mujoco and SMPL-X Tutorial
+Tutorial/
+
+allegro_hand_description/
