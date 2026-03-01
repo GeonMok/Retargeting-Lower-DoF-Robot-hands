@@ -1,0 +1,3 @@
+[submodule "dex-retargeting"]
+	path = dex-retargeting
+	url = https://github.com/dexsuite/dex-retargeting.git
