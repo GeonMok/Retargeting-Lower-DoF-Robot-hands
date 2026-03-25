@@ -86,6 +86,7 @@ M_heuristic = torch.tensor([
 tip_vertex_indices = [8079, 7669, 7794, 7905, 8022] # rthumb, rindex, rmiddle, rring, rpinky 
 middle_joint_indices = [53, 41, 44, 50, 47] # right_thumb2, right_index2, right_middle2, right_ring2, right_pinky2
 base_joint_indices = [52, 40, 43, 49, 46] # right_thumb1, right_index1, right_middle1, right_ring1, right_pinky1
+wrist_pos_0 = joints_3d[0, 21] 
 
 # =======================================================================
 # Phase 3: Warm-up (Eliminating Initialization Jump)
@@ -93,13 +94,23 @@ base_joint_indices = [52, 40, 43, 49, 46] # right_thumb1, right_index1, right_mi
 print("\n=== 3. Warming up the Optimizer (Pre-computing Frame 0) ===")
 # [vector]
 absolute_tips_0 = verts_3d[0, tip_vertex_indices] 
-absolute_bases_0 = joints_3d[0, base_joint_indices]
+absolute_middles_0 = joints_3d[0, middle_joint_indices]
 
-human_vectors_0 = absolute_tips_0 - absolute_bases_0
-P_human_vectors_0 = torch.tensor(human_vectors_0, dtype=torch.float32)
+# [middle joint-relative position]
+# absolute_bases_0 = joints_3d[0, base_joint_indices]
+# human_vectors_0 = absolute_tips_0 - absolute_bases_0
 
-P_robot_vectors_0 = torch.matmul(M_heuristic, P_human_vectors_0)
-target_vectors_0 = P_robot_vectors_0.numpy().astype(np.float32)
+# [palm-relative position]
+human_tip_vectors_0 = absolute_tips_0 - wrist_pos_0
+human_middle_vectors_0 = absolute_middles_0 - wrist_pos_0
+P_human_tip_vectors_0 = torch.tensor(human_tip_vectors_0, dtype=torch.float32)
+P_human_middle_vectors_0 = torch.tensor(human_middle_vectors_0, dtype=torch.float32)
+
+P_robot_tip_vectors_0 = torch.matmul(M_heuristic, P_human_tip_vectors_0)
+P_robot_middle_vectors_0 = torch.matmul(M_heuristic, P_human_middle_vectors_0)
+
+P_robot_8_vectors_0 = torch.cat([P_robot_tip_vectors_0, P_robot_middle_vectors_0], dim=0)
+target_vectors_0 = P_robot_8_vectors_0.numpy().astype(np.float32)
 
 for _ in range(10):
     retargeting.retarget(target_vectors_0)
@@ -143,17 +154,26 @@ trajectory_list = []
 # [vector]
 for i in tqdm(range(n_frames), desc="Optimizing Trajectory"):
     absolute_tips = verts_3d[i, tip_vertex_indices]
+    absolute_middles = joints_3d[i, middle_joint_indices]
+    human_wrist_pos = joints_3d[i, 21]
     absolute_bases = joints_3d[i, base_joint_indices]
+    # [middle joint-relative position]
+    # human_vectors = absolute_tips - absolute_bases
+    # [palm-relative position]
+    human_tip_vectors = absolute_tips - human_wrist_pos
+    human_middle_vectors = absolute_middles - human_wrist_pos
+
+    P_human_tip_vectors = torch.tensor(human_tip_vectors, dtype=torch.float32)
+    P_human_middle_vectors = torch.tensor(human_middle_vectors, dtype=torch.float32)
     
-    human_vectors = absolute_tips - absolute_bases
-    P_human_vectors = torch.tensor(human_vectors, dtype=torch.float32)
-    
-    P_robot_vectors = torch.matmul(M_heuristic, P_human_vectors)
-    target_vectors = P_robot_vectors.numpy().astype(np.float32)
+    P_robot_tip_vectors = torch.matmul(M_heuristic, P_human_tip_vectors)
+    P_robot_middle_vectors = torch.matmul(M_heuristic, P_human_middle_vectors)
+
+    P_robot_8_vectors = torch.cat([P_robot_tip_vectors, P_robot_middle_vectors], dim=0)
+    target_vectors = P_robot_8_vectors.numpy().astype(np.float32)
     
     robot_qpos = retargeting.retarget(target_vectors)
 
-    human_wrist_pos = joints_3d[i, 21]
     robot_qpos[0:3] = human_wrist_pos  # Set the first 3 DoF to match the wrist position (absolute coordinates)
     trajectory_list.append(robot_qpos)
 
