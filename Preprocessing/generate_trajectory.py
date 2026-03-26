@@ -16,7 +16,7 @@ import trimesh.transformations as tf
 # =======================================================================
 MODEL_PATH = "C:/4-1/KIAT/models"  
 NPZ_FILE = 'C:/4-1/KIAT/GRAB/dataset_unzipped/grab/s1/apple_eat_1.npz'
-RETARGETING_CONFIG_PATH = "C:/4-1/KIAT/dex-retargeting/src/dex_retargeting/configs/offline/custom_allegro_hand_right.yml"
+RETARGETING_CONFIG_PATH = "C:/4-1/KIAT/dex-retargeting/src/dex_retargeting/configs/offline/custom_allegro_right_vector.yml"
 URDF_DIR = "C:/4-1/KIAT/allegro_hand_description/allegro_hand_description/urdf"
 OUTPUT_FILE = "allegro_trajectory_s1_apple_eat_1.npy"
 
@@ -39,25 +39,20 @@ print("-> Dex-Retargeting Optimizer loaded.")
 
 # 1-B. Load GRAB Data
 data = np.load(NPZ_FILE, allow_pickle=True)
-#rhand_params = data['rhand'].item()['params']
+rhand_params = data['rhand'].item()['params']
 body_params = data['body'].item()['params']
 n_frames = data['n_frames']
 gender = str(data['gender'])
 
 # 1-C. Initialize SMPL-X
 hand_model = smplx.create(MODEL_PATH, model_type='smplx', gender=gender, 
-                          use_pca=True, num_pca_comps=24, flat_hand_mean=True, batch_size=n_frames)
+                          use_pca=False, flat_hand_mean=True, batch_size=n_frames)
 
-# fullpose = torch.tensor(rhand_params['fullpose'], dtype=torch.float32)
-# global_orient = torch.tensor(rhand_params['global_orient'], dtype=torch.float32)
-# transl = torch.tensor(rhand_params['transl'], dtype=torch.float32)
 transl = torch.tensor(body_params['transl'], dtype=torch.float32)
 global_orient = torch.tensor(body_params['global_orient'], dtype=torch.float32)
 body_pose = torch.tensor(body_params['body_pose'], dtype=torch.float32)
-right_hand_pose = torch.tensor(body_params['right_hand_pose'], dtype=torch.float32)
+right_hand_pose = torch.tensor(rhand_params['fullpose'], dtype=torch.float32)
 
-# # Forward Kinematics for ALL frames simultaneously
-# output = hand_model(global_orient=global_orient, right_hand_pose=fullpose, transl=transl, return_verts=True)
 output = hand_model(
     transl=transl, 
     global_orient=global_orient, 
@@ -86,7 +81,6 @@ M_heuristic = torch.tensor([
 tip_vertex_indices = [8079, 7669, 7794, 7905, 8022] # rthumb, rindex, rmiddle, rring, rpinky 
 middle_joint_indices = [53, 41, 44, 50, 47] # right_thumb2, right_index2, right_middle2, right_ring2, right_pinky2
 base_joint_indices = [52, 40, 43, 49, 46] # right_thumb1, right_index1, right_middle1, right_ring1, right_pinky1
-wrist_pos_0 = joints_3d[0, 21] 
 
 # =======================================================================
 # Phase 3: Warm-up (Eliminating Initialization Jump)
@@ -94,45 +88,48 @@ wrist_pos_0 = joints_3d[0, 21]
 print("\n=== 3. Warming up the Optimizer (Pre-computing Frame 0) ===")
 # [vector]
 absolute_tips_0 = verts_3d[0, tip_vertex_indices] 
-absolute_middles_0 = joints_3d[0, middle_joint_indices]
+wrist_pos_0 = joints_3d[0, 21] 
 
-# [middle joint-relative position]
-# absolute_bases_0 = joints_3d[0, base_joint_indices]
-# human_vectors_0 = absolute_tips_0 - absolute_bases_0
+M_0 = joints_3d[0, 43] # middle1
+I_0 = joints_3d[0, 40] # index1
+
+# Rotation Matrix R_human_0 (Hand Coordinate System)
+y_axis_0 = (M_0 - wrist_pos_0) / np.linalg.norm(M_0 - wrist_pos_0)
+temp_x_0 = (I_0 - M_0) / np.linalg.norm(I_0 - M_0)
+z_axis_0 = np.cross(temp_x_0, y_axis_0)
+z_axis_0 /= np.linalg.norm(z_axis_0)
+x_axis_0 = np.cross(y_axis_0, z_axis_0)
+
+R_human_0 = np.column_stack((x_axis_0, y_axis_0, z_axis_0))
 
 # [palm-relative position]
-human_tip_vectors_0 = absolute_tips_0 - wrist_pos_0
-human_middle_vectors_0 = absolute_middles_0 - wrist_pos_0
-P_human_tip_vectors_0 = torch.tensor(human_tip_vectors_0, dtype=torch.float32)
-P_human_middle_vectors_0 = torch.tensor(human_middle_vectors_0, dtype=torch.float32)
+human_tip_vectors_world_0 = absolute_tips_0 - wrist_pos_0
+human_tip_vectors_local_0 = human_tip_vectors_world_0 @ R_human_0
 
+P_human_tip_vectors_0 = torch.tensor(human_tip_vectors_local_0, dtype=torch.float32)
 P_robot_tip_vectors_0 = torch.matmul(M_heuristic, P_human_tip_vectors_0)
-P_robot_middle_vectors_0 = torch.matmul(M_heuristic, P_human_middle_vectors_0)
-
-P_robot_8_vectors_0 = torch.cat([P_robot_tip_vectors_0, P_robot_middle_vectors_0], dim=0)
-target_vectors_0 = P_robot_8_vectors_0.numpy().astype(np.float32)
+target_vectors_0 = P_robot_tip_vectors_0.numpy().astype(np.float32)
 
 for _ in range(10):
     retargeting.retarget(target_vectors_0)
 
-# [position]
-# # Extract targets specifically for Frame 0
+# # [position]
 # wrist_pos_0 = joints_3d[0, 21]
 # absolute_tips_0 = verts_3d[0, tip_vertex_indices] 
-# absolute_middles_0 = joints_3d[0, middle_joint_indices]
+# # absolute_middles_0 = joints_3d[0, middle_joint_indices]
 
 # if USE_ABSOLUTE_COORD:
 #     human_tips_0 = absolute_tips_0
-#     human_middles_0 = absolute_middles_0
+#     # human_middles_0 = absolute_middles_0
 # else:
 #     human_tips_0 = absolute_tips_0 - wrist_pos_0
-#     human_middles_0 = absolute_middles_0 - wrist_pos_0
+#     # human_middles_0 = absolute_middles_0 - wrist_pos_0
 
 # P_human_tips_0 = torch.tensor(human_tips_0, dtype=torch.float32)
-# P_human_middles_0 = torch.tensor(human_middles_0, dtype=torch.float32)
+# # P_human_middles_0 = torch.tensor(human_middles_0, dtype=torch.float32)
 
 # P_robot_tips_0 = torch.matmul(M_heuristic, P_human_tips_0)
-# P_robot_middles_0 = torch.matmul(M_heuristic, P_human_middles_0)
+# # P_robot_middles_0 = torch.matmul(M_heuristic, P_human_middles_0)
 
 # # P_robot_8_targets_0 = torch.cat([P_robot_tips_0, P_robot_middles_0], dim=0)
 # # target_positions_0 = P_robot_8_targets_0.numpy().astype(np.float32)
@@ -152,32 +149,52 @@ print("\n=== 4. Starting Frame-by-Frame Optimization ===")
 trajectory_list = []
 
 # [vector]
+R_offset = tf.rotation_matrix(np.pi/2, [-1, -1, 0])[:3, :3]
+#R_offset = np.eye(3) 
 for i in tqdm(range(n_frames), desc="Optimizing Trajectory"):
     absolute_tips = verts_3d[i, tip_vertex_indices]
-    absolute_middles = joints_3d[i, middle_joint_indices]
+    # absolute_middles = joints_3d[i, middle_joint_indices]
     human_wrist_pos = joints_3d[i, 21]
-    absolute_bases = joints_3d[i, base_joint_indices]
+    # absolute_bases = joints_3d[i, base_joint_indices]
     # [middle joint-relative position]
     # human_vectors = absolute_tips - absolute_bases
     # [palm-relative position]
-    human_tip_vectors = absolute_tips - human_wrist_pos
-    human_middle_vectors = absolute_middles - human_wrist_pos
+    M = joints_3d[i, 43]
+    I = joints_3d[i, 40]
 
-    P_human_tip_vectors = torch.tensor(human_tip_vectors, dtype=torch.float32)
-    P_human_middle_vectors = torch.tensor(human_middle_vectors, dtype=torch.float32)
+    y_axis = (M - human_wrist_pos) / np.linalg.norm(M - human_wrist_pos)
+    temp_x = (I - M) / np.linalg.norm(I - M)
+    z_axis = np.cross(temp_x, y_axis)
+    z_axis = z_axis / np.linalg.norm(z_axis)
+    x_axis = np.cross(y_axis, z_axis)
+    
+    R_human = np.column_stack((x_axis, y_axis, z_axis))
+    R_robot = R_human @ R_offset
+
+    T_robot_4x4 = np.eye(4)
+    T_robot_4x4[:3, :3] = R_robot
+    rx, ry, rz = tf.euler_from_matrix(T_robot_4x4, axes='sxyz')
+
+    human_tip_vectors_world = absolute_tips - human_wrist_pos
+    human_tip_vectors_local = human_tip_vectors_world @ R_robot
+
+    P_human_tip_vectors = torch.tensor(human_tip_vectors_local, dtype=torch.float32)
+    # P_human_middle_vectors = torch.tensor(human_middle_vectors, dtype=torch.float32)
     
     P_robot_tip_vectors = torch.matmul(M_heuristic, P_human_tip_vectors)
-    P_robot_middle_vectors = torch.matmul(M_heuristic, P_human_middle_vectors)
+    # P_robot_middle_vectors = torch.matmul(M_heuristic, P_human_middle_vectors)
 
-    P_robot_8_vectors = torch.cat([P_robot_tip_vectors, P_robot_middle_vectors], dim=0)
-    target_vectors = P_robot_8_vectors.numpy().astype(np.float32)
+    # P_robot_8_vectors = torch.cat([P_robot_tip_vectors, P_robot_middle_vectors], dim=0)
+    target_vectors = P_robot_tip_vectors.numpy().astype(np.float32)
+    finger_qpos = retargeting.retarget(target_vectors)
     
-    robot_qpos = retargeting.retarget(target_vectors)
+    robot_qpos_22 = np.zeros(22)
+    robot_qpos_22[0:3] = human_wrist_pos     
+    robot_qpos_22[3:6] = [rx, ry, rz]     
+    robot_qpos_22[6:22] = finger_qpos
+    trajectory_list.append(robot_qpos_22)
 
-    robot_qpos[0:3] = human_wrist_pos  # Set the first 3 DoF to match the wrist position (absolute coordinates)
-    trajectory_list.append(robot_qpos)
-
-# [position]
+# # [position]
 # # Loop through each frame with a progress bar
 # for i in tqdm(range(n_frames), desc="Optimizing Trajectory"):
     
