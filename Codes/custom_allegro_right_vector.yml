@@ -1,0 +1,38 @@
+retargeting:
+  type: vector
+
+  urdf_path: allegro_hand_description_right.urdf
+  target_joint_names: null
+  # index(3) -> middle(7) -> ring(11) -> thumb(15)
+  target_task_link_names: [
+      "link_15_tip",
+      "link_3_tip",
+      "link_7_tip",
+      "link_11_tip",
+      # "link_14",
+      # "link_2",
+      # "link_6",
+      # "link_10",
+    ]
+
+  # [palm-relative position]
+  target_origin_link_names: [
+      "palm_link",
+      "palm_link",
+      "palm_link",
+      "palm_link",
+      # "palm_link",
+      # "palm_link",
+      # "palm_link",
+      # "palm_link",
+    ]
+  # meaningless indices since the target information is input
+  target_link_human_indices: [
+      [0, 0, 0, 0],
+      [4, 8, 12, 16],
+      # [0, 0, 0, 0, 0, 0, 0, 0],
+      # [4, 8, 12, 16, 2, 6, 10, 14],
+    ] # [start points], [end points]
+
+  add_dummy_free_joint: False
+  low_pass_alpha: 1

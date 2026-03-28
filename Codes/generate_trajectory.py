@@ -7,25 +7,39 @@ import numpy as np
 from tqdm import tqdm
 import warnings
 warnings.filterwarnings('ignore')
-
+ 
 from dex_retargeting.retargeting_config import get_retargeting_config, RetargetingConfig
+from dex_retargeting.optimizer import PositionOptimizer, VectorOptimizer
 import trimesh.transformations as tf
+
+USE_VECTOR_MODE = False  # True: Vector, False: Position 
+
+if USE_VECTOR_MODE:
+    RETARGETING_CONFIG_PATH = "./custom_allegro_right_vector.yml"
+    print("🚀 MODE: VECTOR RETARGETING")
+else:
+    RETARGETING_CONFIG_PATH = "./custom_allegro_right_position.yml"
+    print("🎯 MODE: POSITION RETARGETING")
+
+class MyCustomPositionOptimizer(PositionOptimizer):
+    def get_objective_function(self, target_pos: np.ndarray, fixed_qpos: np.ndarray, last_qpos: np.ndarray):
+        
+        return super().get_objective_function(target_pos, fixed_qpos, last_qpos)
+
+class MyCustomVectorOptimizer(VectorOptimizer):
+    def get_objective_function(self, target_vector: np.ndarray, fixed_qpos: np.ndarray, last_qpos: np.ndarray):
+        return super().get_objective_function(target_vector, fixed_qpos, last_qpos)
 
 # =======================================================================
 # Configuration & Paths
 # =======================================================================
 MODEL_PATH = "C:/4-1/KIAT/models"  
 NPZ_FILE = 'C:/4-1/KIAT/GRAB/dataset_unzipped/grab/s1/apple_eat_1.npz'
-RETARGETING_CONFIG_PATH = "C:/4-1/KIAT/dex-retargeting/src/dex_retargeting/configs/offline/custom_allegro_right_vector.yml"
 URDF_DIR = "C:/4-1/KIAT/allegro_hand_description/allegro_hand_description/urdf"
 OUTPUT_FILE = "allegro_trajectory_s1_apple_eat_1.npy"
 
 # Set default URDF directory for dex-retargeting
 RetargetingConfig.set_default_urdf_dir(URDF_DIR)
-
-# True: World Coordinate System (Visualization, SDF calculation, etc.) 
-# False: Robot Base Coordinate System (Real Robot Control, Grasp analysis, etc.)
-USE_ABSOLUTE_COORD = True
 
 # =======================================================================
 # Phase 1: Engine Initialization & Human Data Extraction
@@ -36,6 +50,33 @@ print("=== 1. Initializing Engines & Extracting Data ===")
 config = get_retargeting_config(RETARGETING_CONFIG_PATH)
 retargeting = config.build()
 print("-> Dex-Retargeting Optimizer loaded.")
+
+default_optimizer = retargeting.optimizer
+
+if USE_VECTOR_MODE:
+    my_custom_optimizer = MyCustomVectorOptimizer(
+        robot=default_optimizer.robot,
+        target_joint_names=default_optimizer.target_joint_names,
+        target_origin_link_names=default_optimizer.origin_link_names,
+        target_task_link_names=default_optimizer.task_link_names,
+        target_link_human_indices=default_optimizer.target_link_human_indices,
+        huber_delta=0.02,
+        norm_delta=4e-3,
+        scaling=default_optimizer.scaling # only for vector mode
+    )
+    print("-> 🛠️ Custom VECTOR Optimizer injected!")
+else:
+    my_custom_optimizer = MyCustomPositionOptimizer(
+        robot=default_optimizer.robot,
+        target_joint_names=default_optimizer.target_joint_names,
+        target_link_names=default_optimizer.body_names,
+        target_link_human_indices=default_optimizer.target_link_human_indices,
+        huber_delta=0.02,
+        norm_delta=4e-3
+    )
+    print("-> 🛠️ Custom POSITION Optimizer injected!")
+
+retargeting.optimizer = my_custom_optimizer
 
 # 1-B. Load GRAB Data
 data = np.load(NPZ_FILE, allow_pickle=True)
@@ -81,6 +122,7 @@ M_heuristic = torch.tensor([
 tip_vertex_indices = [8079, 7669, 7794, 7905, 8022] # rthumb, rindex, rmiddle, rring, rpinky 
 middle_joint_indices = [53, 41, 44, 50, 47] # right_thumb2, right_index2, right_middle2, right_ring2, right_pinky2
 base_joint_indices = [52, 40, 43, 49, 46] # right_thumb1, right_index1, right_middle1, right_ring1, right_pinky1
+R_offset = tf.rotation_matrix(np.pi/2, [-1, -1, 0])[:3, :3]
 
 # =======================================================================
 # Phase 3: Warm-up (Eliminating Initialization Jump)
@@ -101,44 +143,17 @@ z_axis_0 /= np.linalg.norm(z_axis_0)
 x_axis_0 = np.cross(y_axis_0, z_axis_0)
 
 R_human_0 = np.column_stack((x_axis_0, y_axis_0, z_axis_0))
+R_robot_0 = R_human_0 @ R_offset
 
-# [palm-relative position]
-human_tip_vectors_world_0 = absolute_tips_0 - wrist_pos_0
-human_tip_vectors_local_0 = human_tip_vectors_world_0 @ R_human_0
+world_targets_0 = absolute_tips_0 - wrist_pos_0
+local_targets_0 = world_targets_0 @ R_robot_0
 
-P_human_tip_vectors_0 = torch.tensor(human_tip_vectors_local_0, dtype=torch.float32)
-P_robot_tip_vectors_0 = torch.matmul(M_heuristic, P_human_tip_vectors_0)
-target_vectors_0 = P_robot_tip_vectors_0.numpy().astype(np.float32)
+P_human_targets_0 = torch.tensor(local_targets_0, dtype=torch.float32)
+P_robot_targets_0 = torch.matmul(M_heuristic, P_human_targets_0)
+numpy_targets_0 = P_robot_targets_0.numpy().astype(np.float32)
 
 for _ in range(10):
-    retargeting.retarget(target_vectors_0)
-
-# # [position]
-# wrist_pos_0 = joints_3d[0, 21]
-# absolute_tips_0 = verts_3d[0, tip_vertex_indices] 
-# # absolute_middles_0 = joints_3d[0, middle_joint_indices]
-
-# if USE_ABSOLUTE_COORD:
-#     human_tips_0 = absolute_tips_0
-#     # human_middles_0 = absolute_middles_0
-# else:
-#     human_tips_0 = absolute_tips_0 - wrist_pos_0
-#     # human_middles_0 = absolute_middles_0 - wrist_pos_0
-
-# P_human_tips_0 = torch.tensor(human_tips_0, dtype=torch.float32)
-# # P_human_middles_0 = torch.tensor(human_middles_0, dtype=torch.float32)
-
-# P_robot_tips_0 = torch.matmul(M_heuristic, P_human_tips_0)
-# # P_robot_middles_0 = torch.matmul(M_heuristic, P_human_middles_0)
-
-# # P_robot_8_targets_0 = torch.cat([P_robot_tips_0, P_robot_middles_0], dim=0)
-# # target_positions_0 = P_robot_8_targets_0.numpy().astype(np.float32)
-
-# target_positions_0 = P_robot_tips_0.numpy().astype(np.float32) # Only using fingertips
-
-# # Run the optimizer 10 times off-camera to let the joints settle smoothly
-# for _ in range(10):
-#     retargeting.retarget(target_positions_0)
+    retargeting.retarget(numpy_targets_0)
 
 # =======================================================================
 # Phase 4: Frame-by-Frame Optimization Loop
@@ -149,16 +164,10 @@ print("\n=== 4. Starting Frame-by-Frame Optimization ===")
 trajectory_list = []
 
 # [vector]
-R_offset = tf.rotation_matrix(np.pi/2, [-1, -1, 0])[:3, :3]
-#R_offset = np.eye(3) 
 for i in tqdm(range(n_frames), desc="Optimizing Trajectory"):
     absolute_tips = verts_3d[i, tip_vertex_indices]
-    # absolute_middles = joints_3d[i, middle_joint_indices]
     human_wrist_pos = joints_3d[i, 21]
-    # absolute_bases = joints_3d[i, base_joint_indices]
-    # [middle joint-relative position]
-    # human_vectors = absolute_tips - absolute_bases
-    # [palm-relative position]
+
     M = joints_3d[i, 43]
     I = joints_3d[i, 40]
 
@@ -175,57 +184,21 @@ for i in tqdm(range(n_frames), desc="Optimizing Trajectory"):
     T_robot_4x4[:3, :3] = R_robot
     rx, ry, rz = tf.euler_from_matrix(T_robot_4x4, axes='sxyz')
 
-    human_tip_vectors_world = absolute_tips - human_wrist_pos
-    human_tip_vectors_local = human_tip_vectors_world @ R_robot
+    world_targets = absolute_tips - human_wrist_pos
+    local_targets = world_targets @ R_robot
 
-    P_human_tip_vectors = torch.tensor(human_tip_vectors_local, dtype=torch.float32)
-    # P_human_middle_vectors = torch.tensor(human_middle_vectors, dtype=torch.float32)
+    P_human_targets = torch.tensor(local_targets, dtype=torch.float32)
     
-    P_robot_tip_vectors = torch.matmul(M_heuristic, P_human_tip_vectors)
-    # P_robot_middle_vectors = torch.matmul(M_heuristic, P_human_middle_vectors)
+    P_robot_targets = torch.matmul(M_heuristic, P_human_targets)
 
-    # P_robot_8_vectors = torch.cat([P_robot_tip_vectors, P_robot_middle_vectors], dim=0)
-    target_vectors = P_robot_tip_vectors.numpy().astype(np.float32)
-    finger_qpos = retargeting.retarget(target_vectors)
+    numpy_targets = P_robot_targets.numpy().astype(np.float32)
+    finger_qpos = retargeting.retarget(numpy_targets)
     
     robot_qpos_22 = np.zeros(22)
     robot_qpos_22[0:3] = human_wrist_pos     
     robot_qpos_22[3:6] = [rx, ry, rz]     
     robot_qpos_22[6:22] = finger_qpos
     trajectory_list.append(robot_qpos_22)
-
-# # [position]
-# # Loop through each frame with a progress bar
-# for i in tqdm(range(n_frames), desc="Optimizing Trajectory"):
-    
-#     # Extract relative positions for the current frame
-#     wrist_pos = joints_3d[i, 21]
-#     absolute_tips = verts_3d[i, tip_vertex_indices]
-#     absolute_middles = joints_3d[i, middle_joint_indices]
-
-#     if USE_ABSOLUTE_COORD:
-#         human_tips = absolute_tips
-#         human_middles = absolute_middles
-#     else:
-#         human_tips = absolute_tips - wrist_pos
-#         human_middles = absolute_middles - wrist_pos
-
-#     P_human_tips = torch.tensor(human_tips, dtype=torch.float32)
-#     P_human_middles = torch.tensor(human_middles, dtype=torch.float32)
-    
-#     P_robot_tips = torch.matmul(M_heuristic, P_human_tips)
-#     P_robot_middles = torch.matmul(M_heuristic, P_human_middles)
-    
-#     # P_robot_8_targets = torch.cat([P_robot_tips, P_robot_middles], dim=0)
-#     # target_positions = P_robot_8_targets.numpy().astype(np.float32)
-
-#     target_positions = P_robot_tips.numpy().astype(np.float32) # Only using fingertips
-
-    
-#     robot_qpos = retargeting.retarget(target_positions)
-#     trajectory_list.append(robot_qpos)
-
-# Convert list to a numpy array: shape should be (1628, 22)
 trajectory_array = np.stack(trajectory_list, axis=0)
 
 # =======================================================================
