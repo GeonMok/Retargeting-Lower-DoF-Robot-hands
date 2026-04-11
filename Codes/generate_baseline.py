@@ -30,7 +30,6 @@ else:
 # =======================================================================
 DATASET_DIR = "C:/4-1/kiat/Dataset/trajectory"
 MODEL_PATH = "C:/4-1/KIAT/models"  
-NPZ_FILE = 'C:/4-1/KIAT/GRAB/dataset_unzipped/grab/s1/apple_eat_1.npz'
 URDF_DIR = "C:/4-1/KIAT/allegro_hand_description/allegro_hand_description/urdf"
 
 mapping_str = "drop" if USE_DROP_MAPPING else "simple"
@@ -50,7 +49,7 @@ for npz_path in npz_files:
     obj_action = file_name.replace(".npz", "") # e.g., 'apple_eat_1'
 
     # 1-B. Load GRAB Data
-    data = np.load(NPZ_FILE, allow_pickle=True)
+    data = np.load(npz_path, allow_pickle=True)
     rhand_params = data['rhand'].item()['params']
     body_params = data['body'].item()['params']
     n_frames = data['n_frames']

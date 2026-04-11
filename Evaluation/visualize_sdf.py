@@ -6,7 +6,7 @@ from skimage.measure import marching_cubes
 import os
 
 # 1. 경로 설정 (구워진 파일 경로)
-SDF_FILE_PATH = "C:/4-1/KIAT/Codes/baked_sdfs/cup_sdf_res64.pt"
+SDF_FILE_PATH = "C:/4-1/KIAT/Codes/baked_sdfs/bowl_sdf_res64.pt"
 
 if not os.path.exists(SDF_FILE_PATH):
     print(f"🚨 파일을 찾을 수 없습니다: {SDF_FILE_PATH}")
