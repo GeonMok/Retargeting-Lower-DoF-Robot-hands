@@ -16,7 +16,7 @@ print("=== 1. Setting Up Absolute Paths ===")
 
 # 🚨 사용자의 환경에 맞게 경로를 확인해 주세요.
 SMPLX_MODEL_PATH = "C:/4-1/KIAT/models"
-TRAJECTORY_FILE = "C:/4-1/KIAT/Preprocessing/allegro_trajectory_s1_apple_eat_1_drop.npy" 
+TRAJECTORY_FILE = "C:/4-1/KIAT/Codes/allegro_trajectory_s1_apple_eat_1_simple.npy" 
 APPLE_MESH_FILE = "C:/4-1/KIAT/GRAB/dataset_unzipped/tools/object_meshes/contact_meshes/apple.ply"
 GRAB_NPZ_FILE = "C:/4-1/KIAT/GRAB/dataset_unzipped/grab/s1/apple_eat_1.npz"
 URDF_PATH = "C:/4-1/KIAT/allegro_hand_description/allegro_hand_description/urdf/allegro_hand_description_right.urdf"
@@ -54,7 +54,7 @@ print(f"-> Total Synced Frames: {sync_frames}")
 # 🚨 2-C. 정적 확인을 위한 타겟 프레임 설정 🚨
 # 0 : 처음 프레임 (T-pose 상태인 경우가 많음)
 # sync_frames - 1 : 마지막 프레임
-TARGET_FRAME_IDX = 310 
+TARGET_FRAME_IDX = 0 
 
 print(f"-> 🎯 TARGET FRAME SELECTED: {TARGET_FRAME_IDX}")
 

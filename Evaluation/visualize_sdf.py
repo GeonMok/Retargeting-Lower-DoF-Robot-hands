@@ -6,7 +6,7 @@ from skimage.measure import marching_cubes
 import os
 
 # 1. 경로 설정 (구워진 파일 경로)
-SDF_FILE_PATH = "C:/4-1/KIAT/Codes/baked_sdfs/camera_sdf_res64.pt"
+SDF_FILE_PATH = "C:/4-1/KIAT/Codes/baked_sdfs/cup_sdf_res64.pt"
 
 if not os.path.exists(SDF_FILE_PATH):
     print(f"🚨 파일을 찾을 수 없습니다: {SDF_FILE_PATH}")
@@ -16,6 +16,7 @@ print(f"-> Loading baked SDF from: {SDF_FILE_PATH}")
 data = torch.load(SDF_FILE_PATH)
 sdf_tensor = data['sdf_grid']  # Shape: (1, 64, 64, 64)
 sdf_numpy = sdf_tensor.squeeze().numpy()  # Shape: (64, 64, 64)
+print(f"SDF Data Range: Min = {sdf_numpy.min():.4f}, Max = {sdf_numpy.max():.4f}")
 
 obj_name = data.get('obj_name', 'Unknown Object')
 resolution = data.get('resolution', 64)
@@ -28,26 +29,34 @@ print(f"-> Grid Size: {grid_dim:.4f} m")
 # ==========================================
 # 📊 시각화 1: 2D 단면도 (Heatmap)
 # ==========================================
-print("\n-> 1. 2D 단면도(Z축 중간 지점)를 렌더링합니다. (창을 닫으면 다음으로 넘어갑니다)")
+print("\n-> 1. 2D 단면도를 렌더링합니다. (창을 닫으면 다음으로 넘어갑니다)")
 
-# Z축의 정중앙 단면 가져오기
-mid_z = resolution // 2
-slice_2d = sdf_numpy[:, :, mid_z]
+# 3개의 다른 Z 높이 지정 (ex: Z=16, Z=32, Z=48)
+z_slices = [resolution // 2 - 1, resolution // 2, resolution // 2 + 1]
 
-plt.figure(figsize=(8, 6))
-# coolwarm 컬러맵: 파란색(음수, 물체 내부), 빨간색(양수, 물체 외부)
-img = plt.imshow(slice_2d, cmap='coolwarm', origin='lower')
-plt.colorbar(img, label='Signed Distance (meters)')
+fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+max_dist = np.max(np.abs(sdf_numpy)) # Make colormap symmetrical
 
-# SDF 값이 정확히 0인 표면을 검은색 등고선으로 표시
-plt.contour(slice_2d, levels=[0.0], colors='black', linewidths=2)
+for i, z_idx in enumerate(z_slices):
+    slice_2d = sdf_numpy[:, :, z_idx]
+    
+    # 렌더링
+    ax = axes[i]
+    img = ax.imshow(slice_2d, cmap='coolwarm', origin='lower', vmin=-max_dist, vmax=max_dist)
+    
+    # 등고선 (표면)
+    ax.contour(slice_2d, levels=[0.0], colors='black', linewidths=2)
+    
+    ax.set_title(f"Slice at Z={z_idx}")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
 
-plt.title(f"SDF Cross-Section (Z={mid_z}) - Black line is Surface (0.0)")
-plt.xlabel("X axis (grid index)")
-plt.ylabel("Y axis (grid index)")
-plt.tight_layout()
+# 공통 컬러바 추가
+cbar = fig.colorbar(img, ax=axes.ravel().tolist(), fraction=0.02, pad=0.04)
+cbar.set_label('Signed Distance (meters)')
+
+plt.suptitle(f"SDF Cross-Sections for {obj_name}")
 plt.show()
-
 # ==========================================
 # 🍎 시각화 2: 3D 표면 복원 (Marching Cubes)
 # ==========================================
