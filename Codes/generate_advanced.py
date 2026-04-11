@@ -32,9 +32,11 @@ RetargetingConfig.set_default_urdf_dir(URDF_DIR)
 # Synergy Mapping (M_simple) & Constants
 # =======================================================================
 M_heuristic = torch.tensor([
-    [1.0, 0.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0, 0.0], 
-    [0.0, 0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.5, 0.5]
-], dtype=torch.float32)
+        [0.836, 0.164, 0.000, 0.000, 0.000],
+        [0.000, 0.720, 0.280, 0.000, 0.000],
+        [0.000, 0.000, 0.260, 0.740, 0.000],
+        [0.000, 0.000, 0.000, 0.160, 0.840]
+    ], dtype=torch.float32)
 
 tip_vertex_indices = [8079, 7669, 7794, 7905, 8022] 
 R_offset = tf.rotation_matrix(np.pi/2, [-1, -1, 0])[:3, :3]
@@ -56,7 +58,7 @@ for npz_path in npz_files:
     
     # 1. 동적 파일 경로 생성
     sdf_file_path = os.path.join(SDF_DIR, f"{obj_name}_sdf_res64.pt")
-    output_filename = f"allegro_allloss_s1_{obj_action}_simple.npy"
+    output_filename = f"allegro_limitloss_s1_{obj_action}_nn.npy"
     output_filepath = os.path.join(OUTPUT_DIR, output_filename)
     
     # 해당 물체의 SDF 파일이 구워져 있지 않다면 스킵합니다.
@@ -96,12 +98,15 @@ for npz_path in npz_files:
 
     my_custom_optimizer = MyCustomPositionOptimizer(
         sdf_path=sdf_file_path,            # 🚨 물체에 맞는 동적 SDF 경로 주입
-        use_sdf=True,                      # SDF 스위치 ON
+        use_sdf=False,                      # SDF 스위치 
         penetration_threshold=0.005, 
         penetration_weight=2000.0,   
-        use_limit=True,                    # Limit 스위치 ON
+        use_attraction=False,
+        contact_margin=0.01,
+        attraction_weight=100.0,
+        use_limit=True,                    # Limit 스위치 
         limit_margin=0.05,
-        limit_weight=50.0,
+        limit_weight=500.0,
         robot=default_optimizer.robot,
         target_joint_names=default_optimizer.target_joint_names,
         target_link_names=default_optimizer.body_names,

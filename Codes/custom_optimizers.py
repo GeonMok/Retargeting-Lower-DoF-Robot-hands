@@ -7,6 +7,7 @@ from dex_retargeting.optimizer import PositionOptimizer, VectorOptimizer
 class MyCustomPositionOptimizer(PositionOptimizer):
     def __init__(self, sdf_path: str = None, 
                  use_sdf=True, penetration_threshold=0.005, penetration_weight=2000.0,
+                 use_attraction=True, contact_margin=0.01, attraction_weight=500.0,
                  use_limit=True, limit_margin=0.05, limit_weight=50.0,
                  *args, **kwargs):
         """        
@@ -29,6 +30,10 @@ class MyCustomPositionOptimizer(PositionOptimizer):
             print("🔴 [Limit Term]: OFF")
 
         self.use_sdf = use_sdf
+        self.use_attraction = use_attraction
+        self.contact_margin = contact_margin
+        self.attraction_weight = attraction_weight
+
         self.current_obj_transl = None
         self.current_obj_rot_matrix = None
         
@@ -82,6 +87,7 @@ class MyCustomPositionOptimizer(PositionOptimizer):
             # 💡 Custom Loss1: [True SDF / Penetration Loss]
             # ==========================================================
             sdf_loss = torch.tensor(0.0, requires_grad=True)
+            attraction_loss = torch.tensor(0.0, requires_grad=True)
 
             if self.use_sdf and self.current_obj_transl is not None:
                 if not self.is_grid_on_device:
@@ -107,6 +113,10 @@ class MyCustomPositionOptimizer(PositionOptimizer):
                 violation = self.penetration_threshold - sdf_values
                 active_penetration = F.relu(violation)
                 sdf_loss = torch.sum(active_penetration ** 2) * self.penetration_weight
+                if self.use_attraction:
+                    floating = sdf_values - self.contact_margin
+                    active_floating = F.relu(floating)
+                    attraction_loss = torch.sum(active_floating ** 2) * self.attraction_weight
 
             # ==========================================================
             # 💡 [Loss 2]: Limit Loss (NumPy)
@@ -130,7 +140,7 @@ class MyCustomPositionOptimizer(PositionOptimizer):
             
             huber_distance = self.huber_loss(torch_body_pos, torch_target_pos)
             
-            total_loss = huber_distance + sdf_loss
+            total_loss = huber_distance + sdf_loss + attraction_loss
 
             result = total_loss.cpu().detach().item() + limit_loss_val
 

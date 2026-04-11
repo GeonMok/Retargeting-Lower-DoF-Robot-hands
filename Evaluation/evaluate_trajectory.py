@@ -37,7 +37,7 @@ def parse_filename(filename):
     Extracts subject, object, and action from the generated filename.
     Example: 'allegro_trajectory_s1_apple_eat_1_advanced.npy' -> ('originalloss', 's1', 'apple', 'eat_1')
     """
-    pattern = r'allegro_([a-zA-Z0-9_]+)_(s\d+)_([a-zA-Z]+)_([a-zA-Z0-9_]+)_(drop|simple|advanced)\.npy'
+    pattern = r'allegro_([a-zA-Z0-9_]+)_(s\d+)_([a-zA-Z]+)_([a-zA-Z0-9_]+)_(drop|simple|nn)\.npy'
     
     match = re.search(pattern, filename)
     if not match:
@@ -217,23 +217,44 @@ if __name__ == "__main__":
     target_files = glob.glob(os.path.join(TRAJECTORY_DIR, "*.npy"))
     print(f"🔍 Found {len(target_files)} trajectory files to evaluate.\n")
     
-    all_results = []
+    evaluated_files = set()
+    file_exists = os.path.exists(CSV_OUTPUT_FILE)
+    
+    if file_exists:
+        with open(CSV_OUTPUT_FILE, 'r', newline='') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if 'Filename' in row:
+                    evaluated_files.add(row['Filename'])
+        print(f"   -> Found {len(evaluated_files)} already evaluated records in CSV. Skipping these...\n")
+    
+    new_results = []
     
     for idx, filepath in enumerate(target_files, 1):
         filename = os.path.basename(filepath)
+        
+        if filename in evaluated_files:
+            print(f"[{idx}/{len(target_files)}] ⏩ Skipping {filename} (Already evaluated)")
+            continue
+            
         print(f"[{idx}/{len(target_files)}] Evaluating: {filename}")
         
         try:
             result = evaluate(filepath)
-            all_results.append(result)
+            new_results.append(result)
         except Exception as e:
             print(f"🚨 Error processing {filename}: {e}")
     
-    if all_results:
-        keys = all_results[0].keys()
-        with open(CSV_OUTPUT_FILE, 'w', newline='') as output_file:
+    if new_results:
+        keys = new_results[0].keys()
+        mode = 'a' if file_exists else 'w'
+        
+        with open(CSV_OUTPUT_FILE, mode, newline='') as output_file:
             dict_writer = csv.DictWriter(output_file, fieldnames=keys)
-            dict_writer.writeheader()
-            dict_writer.writerows(all_results)
+            if not file_exists:
+                dict_writer.writeheader() # 파일이 없었을 때만 헤더 생성
+            dict_writer.writerows(new_results)
             
-        print(f"\n🎉 ALL DONE! Results successfully saved to: {CSV_OUTPUT_FILE}")
+        print(f"\n🎉 ALL DONE! {len(new_results)} new results successfully appended to: {CSV_OUTPUT_FILE}")
+    else:
+        print(f"\n🎉 ALL DONE! No new trajectories needed evaluation.")

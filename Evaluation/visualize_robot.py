@@ -12,9 +12,9 @@ warnings.filterwarnings('ignore')
 
 print("=== 1. Setting Up Absolute Paths ===")
 SMPLX_MODEL_PATH = "C:/4-1/KIAT/models"
-TRAJECTORY_FILE = "C:/4-1/KIAT/Codes/allegro_originalloss_s1_apple_eat_1_simple.npy" 
-APPLE_MESH_FILE = "C:/4-1/KIAT/GRAB/dataset_unzipped/tools/object_meshes/contact_meshes/apple.ply"
-GRAB_NPZ_FILE = "C:/4-1/KIAT/GRAB/dataset_unzipped/grab/s1/apple_eat_1.npz"
+TRAJECTORY_FILE = "C:/4-1/KIAT/Codes/advanced_outputs/allegro_limitloss_s1_cup_drink_1_nn.npy" 
+OBJ_MESH_FILE = "C:/4-1/KIAT/GRAB/dataset_unzipped/tools/object_meshes/contact_meshes/cup.ply"
+GRAB_NPZ_FILE = "C:/4-1/KIAT/GRAB/dataset_unzipped/grab/s1/cup_drink_1.npz"
 URDF_PATH = "C:/4-1/KIAT/allegro_hand_description/allegro_hand_description/urdf/allegro_hand_description_right.urdf"
 
 ALLEGRO_JOINT_NAMES = [
@@ -29,8 +29,8 @@ trajectory = np.load(TRAJECTORY_FILE)
 n_frames = trajectory.shape[0]
 
 robot_urdf = URDF.load(URDF_PATH)
-apple_mesh = trimesh.load(APPLE_MESH_FILE)
-apple_mesh.visual.face_colors = [100, 255, 100, 150] 
+obj_mesh = trimesh.load(OBJ_MESH_FILE, process=False)
+obj_mesh.visual.face_colors = [100, 255, 100, 150] 
 
 grab_data = np.load(GRAB_NPZ_FILE, allow_pickle=True)
 obj_data = grab_data['object'].item()['params']
@@ -40,26 +40,22 @@ obj_global_orient = obj_data['global_orient']
 sync_frames = min(n_frames, obj_transl.shape[0])
 print(f"-> Synced Frames: {sync_frames}")
 
-# 🚨 2-C. Reconstruct Human SMPL-X Mesh (Ground Truth)
+# 2-C. Reconstruct Human SMPL-X Mesh
 print("-> Reconstructing Human Hand Mesh from SMPL-X params...")
 body_data = grab_data['body'].item()['params']
 rhand_data = grab_data['rhand'].item()['params']
 gender = str(grab_data['gender'])
 
-# Initialize SMPL-X model (calculator)
-# 🚨 Must match parameters used in generate_trajectory.py!
 human_model = smplx.create(
     SMPLX_MODEL_PATH, model_type='smplx', gender=gender,
     use_pca=False, flat_hand_mean=True, batch_size=sync_frames
 )
 
-# Move parameters to torch tensors
 transl_t = torch.tensor(body_data['transl'][:sync_frames], dtype=torch.float32)
 global_orient_t = torch.tensor(body_data['global_orient'][:sync_frames], dtype=torch.float32)
 body_pose_t = torch.tensor(body_data['body_pose'][:sync_frames], dtype=torch.float32)
 right_hand_pose_t = torch.tensor(rhand_data['fullpose'][:sync_frames], dtype=torch.float32)
 
-# Run forward pass to get vertices
 output = human_model(
     transl=transl_t, 
     global_orient=global_orient_t, 
@@ -67,7 +63,7 @@ output = human_model(
     right_hand_pose=right_hand_pose_t, 
     return_verts=True
 )
-human_verts_3d = output.vertices.detach().numpy() # (N, 10475, 3)
+human_verts_3d = output.vertices.detach().numpy()
 
 # Mesh Cropping
 wrist_pos_0 = output.joints[0, 21].detach().numpy() 
@@ -80,22 +76,21 @@ human_mesh_template = trimesh.Trimesh(
     faces=hand_faces_only,  
     process=False
 )
-# Set human hand color to semi-transparent blue/grey for contrast
-human_mesh_template.visual.face_colors = [150, 150, 200, 100] # Very transparent
+human_mesh_template.visual.face_colors = [150, 150, 200, 100] 
 
 print("-> Human Hand Reconstruction Complete.")
 
-
 print("\n=== 3. Starting Scene Construction ===")
 combined_scene = trimesh.Scene()
-combined_scene.add_geometry(apple_mesh, node_name='apple_node')
+combined_scene.add_geometry(obj_mesh, node_name='obj_node')
 combined_scene.add_geometry(human_mesh_template, geom_name='human_hand_geom', node_name='human_hand_node')
 
 for node_name in robot_urdf.scene.graph.nodes_geometry:
-    local_transform, geom_name = robot_urdf.scene.graph[node_name]
+    # 🚨 1번 수정: Absolute Transform 사용
+    absolute_transform, geom_name = robot_urdf.scene.graph.get(node_name)
     geom = robot_urdf.scene.geometry[geom_name]
     geom.visual.face_colors = [255, 100, 100, 180] 
-    combined_scene.add_geometry(geom, node_name=f"robot_{node_name}", transform=local_transform)
+    combined_scene.add_geometry(geom, node_name=f"robot_{node_name}", transform=absolute_transform)
 
 print("\n=== 4. Setting Initial Camera View (Frame 0) ===")
 initial_qpos = trajectory[0]
@@ -106,26 +101,30 @@ finger_angles_0 = initial_qpos[6:22]
 initial_obj_transl_0 = obj_transl[0]
 initial_obj_orient_aa_0 = obj_global_orient[0] 
 
-cv2.Rodrigues(initial_obj_orient_aa_0)[0]
-    
 T_wrist_0 = np.dot(tf.translation_matrix(wrist_transl_xyz_0), 
                    tf.euler_matrix(wrist_rot_rpy_0[0], wrist_rot_rpy_0[1], wrist_rot_rpy_0[2], axes='sxyz'))
 
 for node_name in robot_urdf.scene.graph.nodes_geometry:
-    local_transform, _ = robot_urdf.scene.graph[node_name]
-    combined_scene.graph.update(f"robot_{node_name}", matrix=np.dot(T_wrist_0, local_transform))
+    # 🚨 1번 수정: Absolute Transform 기반 렌더링
+    abs_transform_in_urdf_0, _ = robot_urdf.scene.graph.get(node_name)
+    combined_scene.graph.update(f"robot_{node_name}", matrix=np.dot(T_wrist_0, abs_transform_in_urdf_0))
     
-combined_scene.graph.update("apple_node", matrix=T_wrist_0) 
+# 🚨 2번 수정: 물체의 올바른 위치 계산 및 세팅
+initial_obj_rot_matrix, _ = cv2.Rodrigues(initial_obj_orient_aa_0)
+T_obj_0 = np.eye(4)
+T_obj_0[:3, :3] = initial_obj_rot_matrix.T
+T_obj_0[:3, 3] = initial_obj_transl_0
 
-combined_scene.set_camera(distance=5.0, center=initial_obj_transl_0)
+combined_scene.graph.update("obj_node", matrix=T_obj_0) 
+
+combined_scene.set_camera(distance=1, center=initial_obj_transl_0, angles = (np.pi/3, 0, 0))
 
 
 print("\n=== 5. Launching Animated Viewer ===")
 frame_idx = 0
 
-
 def update_callback(scene):
-    global frame_idx, sync_frames, apple_mesh
+    global frame_idx, sync_frames
     time.sleep(1/30.0)
     
     qpos = trajectory[frame_idx]
@@ -144,23 +143,23 @@ def update_callback(scene):
     
     T_object_transl = tf.translation_matrix(current_obj_transl)
     T_object_rot = np.eye(4)
-    T_object_rot[:3, :3] = current_obj_rot_matrix
+    T_object_rot[:3, :3] = current_obj_rot_matrix.T
     T_object = np.dot(T_object_transl, T_object_rot)
 
     joint_dict = {name: angle for name, angle in zip(ALLEGRO_JOINT_NAMES, finger_angles)}
-    robot_urdf.update_cfg(joint_dict) 
+    robot_urdf.update_cfg(joint_dict) # 내부 FK 계산 업데이트
 
-    # --- 🚀 3. Human (Ground Truth) Mesh Update ---
-    # Update the vertices of the human mesh geometry *in place* for performance.
-    # We do not need transforms because SMPL-X output is already in Absolute World coords.
+    # 사람 손 Mesh 업데이트
     scene.geometry['human_hand_geom'].vertices = human_verts_3d[frame_idx]
 
+    # 로봇 손 관절 위치 업데이트
     for node_name in robot_urdf.scene.graph.nodes_geometry:
-        local_transform, _ = robot_urdf.scene.graph[node_name]
-        final_transform = np.dot(T_wrist, local_transform)
+        # 🚨 1번 수정: Absolute Transform (URDF 베이스 기준)을 얻어와 T_wrist를 곱함!
+        abs_transform_in_urdf, _ = robot_urdf.scene.graph.get(node_name)
+        final_transform = np.dot(T_wrist, abs_transform_in_urdf)
         scene.graph.update(f"robot_{node_name}", matrix=final_transform)
         
-    scene.graph.update("apple_node", matrix=T_object)
+    scene.graph.update("obj_node", matrix=T_object)
 
     frame_idx = (frame_idx + 1) % sync_frames
 

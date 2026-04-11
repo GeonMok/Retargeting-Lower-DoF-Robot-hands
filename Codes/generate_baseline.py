@@ -16,7 +16,6 @@ from dex_retargeting.retargeting_config import get_retargeting_config, Retargeti
 import trimesh.transformations as tf
 
 USE_VECTOR_MODE = False  # True: Vector, False: Position 
-USE_DROP_MAPPING = True   # 🚨 True: M_drop, False: M_simple
 
 if USE_VECTOR_MODE:
     RETARGETING_CONFIG_PATH = "./custom_allegro_right_vector.yml"
@@ -31,12 +30,34 @@ else:
 DATASET_DIR = "C:/4-1/kiat/Dataset/trajectory"
 MODEL_PATH = "C:/4-1/KIAT/models"  
 URDF_DIR = "C:/4-1/KIAT/allegro_hand_description/allegro_hand_description/urdf"
-
-mapping_str = "drop" if USE_DROP_MAPPING else "simple"
 OUTPUT_DIR = "./baseline_outputs"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Set default URDF directory for dex-retargeting
 RetargetingConfig.set_default_urdf_dir(URDF_DIR)
+
+MAPPINGS = {
+    "drop": torch.tensor([
+        [1.0, 0.0, 0.0, 0.0, 0.0], 
+        [0.0, 1.0, 0.0, 0.0, 0.0], 
+        [0.0, 0.0, 1.0, 0.0, 0.0], 
+        [0.0, 0.0, 0.0, 1.0, 0.0]
+    ], dtype=torch.float32),
+    
+    "simple": torch.tensor([
+        [1.0, 0.0, 0.0, 0.0, 0.0], 
+        [0.0, 1.0, 0.0, 0.0, 0.0], 
+        [0.0, 0.0, 1.0, 0.0, 0.0], 
+        [0.0, 0.0, 0.0, 0.5, 0.5]
+    ], dtype=torch.float32),
+    
+    "nn": torch.tensor([
+        [0.836, 0.164, 0.000, 0.000, 0.000],
+        [0.000, 0.720, 0.280, 0.000, 0.000],
+        [0.000, 0.000, 0.260, 0.740, 0.000],
+        [0.000, 0.000, 0.000, 0.160, 0.840]
+    ], dtype=torch.float32)
+}
+
 
 # =======================================================================
 # Phase 1: Engine Initialization & Human Data Extraction
@@ -47,6 +68,21 @@ print(f"Found {len(npz_files)} dataset files to process.\n")
 for npz_path in npz_files:
     file_name = os.path.basename(npz_path)
     obj_action = file_name.replace(".npz", "") # e.g., 'apple_eat_1'
+
+    print("-" * 60)
+    print(f"📦 Processing: {obj_action}")
+    
+    mappings_to_run = {}
+    for m_name, m_tensor in MAPPINGS.items():
+        output_filepath = os.path.join(OUTPUT_DIR, f"allegro_originalloss_s1_{obj_action}_{m_name}.npy")
+        if os.path.exists(output_filepath):
+            print(f" ⏩ Skipping [M_{m_name}] (File already exists)")
+        else:
+            mappings_to_run[m_name] = m_tensor
+            
+    if not mappings_to_run:
+        print(f" ✅ All trajectories for {obj_action} already exist. Moving to next file.\n")
+        continue
 
     # 1-B. Load GRAB Data
     data = np.load(npz_path, allow_pickle=True)
@@ -82,25 +118,12 @@ for npz_path in npz_files:
     # =======================================================================
     # Phase 2: Topology Mapping Matrix Setup
     # =======================================================================
-    for use_drop in [True, False]:
-        mapping_str = "drop" if use_drop else "simple"
-        output_filename = f"allegro_originalloss_s1_{obj_action}_{mapping_str}.npy"
+    for m_name, M_heuristic in mappings_to_run.items():
+        output_filename = f"allegro_originalloss_s1_{obj_action}_{m_name}.npy"
         output_filepath = os.path.join(OUTPUT_DIR, output_filename)
-        
-        if use_drop:
-            M_heuristic = torch.tensor([
-                [1.0, 0.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0, 0.0], 
-                [0.0, 0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0, 0.0]
-            ], dtype=torch.float32)
-            desc_str = "Optimizing [M_drop]"
-        else:
-            M_heuristic = torch.tensor([
-                [1.0, 0.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0, 0.0], 
-                [0.0, 0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.5, 0.5]
-            ], dtype=torch.float32)
-            desc_str = "Optimizing [M_simple]"
+        desc_str = f"Optimizing [M_{m_name}]"
 
-        # Rebuild config for each mapping to guarantee clean state (no trajectory memory leak)
+        # Rebuild config for each mapping to guarantee clean state
         config = get_retargeting_config(RETARGETING_CONFIG_PATH)
         retargeting = config.build()
         trajectory_list = []
@@ -148,6 +171,6 @@ for npz_path in npz_files:
         trajectory_array = np.stack(trajectory_list, axis=0)
         np.save(output_filepath, trajectory_array)
         
-    print(f" ✅ Finished both mappings for {obj_action}\n")
+    print(f" ✅ Finished processing mappings for {obj_action}\n")
 
 print("🎉 ALL DATASETS PROCESSED SUCCESSFULLY! 🎉")
