@@ -2,6 +2,8 @@
 import os
 import glob
 import csv
+import time
+import datetime
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 import torch
 import re
@@ -26,7 +28,7 @@ BASE_MESH_DIR = "C:/4-1/KIAT/GRAB/dataset_unzipped/tools/object_meshes/contact_m
 SMPLX_MODEL_PATH = "C:/4-1/KIAT/models"
 URDF_PATH = "C:/4-1/KIAT/allegro_hand_description/allegro_hand_description/urdf/allegro_hand_description_right.urdf"
 
-TRAJECTORY_DIR = "C:/4-1/kiat/codes/baseline_outputs"
+TRAJECTORY_DIR = "C:/4-1/kiat/codes/generated_trajectories"
 CSV_OUTPUT_FILE = "evaluation_results.csv"
 
 # =======================================================================
@@ -164,7 +166,8 @@ def evaluate(trajectory_path):
         # --- 3. Object Transform & Proximity ---
         # Instead of transforming the mesh (slow), we transform robot points to object local space
         T_obj = np.eye(4)
-        T_obj[:3, :3], _ = cv2.Rodrigues(obj_orient[i])
+        obj_rot_matrix, _ = cv2.Rodrigues(obj_orient[i])
+        T_obj[:3, :3] = obj_rot_matrix.T
         T_obj[:3, 3] = obj_transl[i]
         T_obj_inv = np.linalg.inv(T_obj)
 
@@ -214,6 +217,8 @@ def evaluate(trajectory_path):
     }
 
 if __name__ == "__main__":
+    start_time = time.time()
+
     target_files = glob.glob(os.path.join(TRAJECTORY_DIR, "*.npy"))
     print(f"🔍 Found {len(target_files)} trajectory files to evaluate.\n")
     
@@ -252,9 +257,17 @@ if __name__ == "__main__":
         with open(CSV_OUTPUT_FILE, mode, newline='') as output_file:
             dict_writer = csv.DictWriter(output_file, fieldnames=keys)
             if not file_exists:
-                dict_writer.writeheader() # 파일이 없었을 때만 헤더 생성
+                dict_writer.writeheader() 
             dict_writer.writerows(new_results)
             
         print(f"\n🎉 ALL DONE! {len(new_results)} new results successfully appended to: {CSV_OUTPUT_FILE}")
     else:
         print(f"\n🎉 ALL DONE! No new trajectories needed evaluation.")
+
+    end_time = time.time()
+    total_seconds = end_time - start_time
+    time_formatted = str(datetime.timedelta(seconds=int(total_seconds))) 
+    
+    print("\n" + "="*60)
+    print(f"⏱️ TOTAL EVALUATION TIME: {time_formatted} (HH:MM:SS)")
+    print("="*60 + "\n")

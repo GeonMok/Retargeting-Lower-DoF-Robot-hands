@@ -22,7 +22,7 @@ DATASET_DIR = "C:/4-1/kiat/Dataset/trajectory"
 MODEL_PATH = "C:/4-1/KIAT/models"  
 URDF_DIR = "C:/4-1/KIAT/allegro_hand_description/allegro_hand_description/urdf"
 SDF_DIR = "./baked_sdfs"             # 구워진 SDF 파일들이 모여있는 폴더
-OUTPUT_DIR = "./advanced_outputs"    # SDF가 적용된 궤적이 저장될 폴더
+OUTPUT_DIR = "./generated_trajectories"    # SDF가 적용된 궤적이 저장될 폴더
 RETARGETING_CONFIG_PATH = "./custom_allegro_right_position.yml"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -121,7 +121,7 @@ for npz_path in npz_files:
     for i in tqdm(range(n_frames), desc=f"   -> Optimizing [SDF + M_simple]"):
         current_obj_transl = obj_transl[i]
         current_obj_rot_matrix, _ = cv2.Rodrigues(obj_global_orient[i]) 
-        
+        current_obj_rot_matrix = current_obj_rot_matrix.T
         my_custom_optimizer.update_object_pose(current_obj_transl, current_obj_rot_matrix)
 
         absolute_tips = verts_3d[i, tip_vertex_indices]

@@ -6,7 +6,7 @@ from skimage.measure import marching_cubes
 import os
 
 # 1. 경로 설정 (구워진 파일 경로)
-SDF_FILE_PATH = "C:/4-1/KIAT/Codes/baked_sdfs/bowl_sdf_res64.pt"
+SDF_FILE_PATH = "C:/4-1/KIAT/Codes/baked_sdfs/camera_sdf_res64.pt"
 
 if not os.path.exists(SDF_FILE_PATH):
     print(f"🚨 파일을 찾을 수 없습니다: {SDF_FILE_PATH}")
@@ -32,7 +32,7 @@ print(f"-> Grid Size: {grid_dim:.4f} m")
 print("\n-> 1. 2D 단면도를 렌더링합니다. (창을 닫으면 다음으로 넘어갑니다)")
 
 # 3개의 다른 Z 높이 지정 (ex: Z=16, Z=32, Z=48)
-z_slices = [resolution // 2 - 1, resolution // 2, resolution // 2 + 1]
+z_slices = [resolution // 3, resolution // 2, resolution // 3 * 2]  
 
 fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 max_dist = np.max(np.abs(sdf_numpy)) # Make colormap symmetrical

@@ -12,7 +12,7 @@ warnings.filterwarnings('ignore')
 
 print("=== 1. Setting Up Absolute Paths ===")
 SMPLX_MODEL_PATH = "C:/4-1/KIAT/models"
-TRAJECTORY_FILE = "C:/4-1/KIAT/Codes/advanced_outputs/allegro_limitloss_s1_cup_drink_1_nn.npy" 
+TRAJECTORY_FILE = "C:/4-1/KIAT/Codes/generated_trajectories/allegro_attloss_s1_cup_drink_1_nn.npy" 
 OBJ_MESH_FILE = "C:/4-1/KIAT/GRAB/dataset_unzipped/tools/object_meshes/contact_meshes/cup.ply"
 GRAB_NPZ_FILE = "C:/4-1/KIAT/GRAB/dataset_unzipped/grab/s1/cup_drink_1.npz"
 URDF_PATH = "C:/4-1/KIAT/allegro_hand_description/allegro_hand_description/urdf/allegro_hand_description_right.urdf"
