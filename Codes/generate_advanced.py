@@ -21,8 +21,8 @@ from custom_optimizers import MyCustomPositionOptimizer
 DATASET_DIR = "C:/4-1/kiat/Dataset/trajectory"
 MODEL_PATH = "C:/4-1/KIAT/models"  
 URDF_DIR = "C:/4-1/KIAT/allegro_hand_description/allegro_hand_description/urdf"
-SDF_DIR = "./baked_sdfs"             # 구워진 SDF 파일들이 모여있는 폴더
-OUTPUT_DIR = "./generated_trajectories"    # SDF가 적용된 궤적이 저장될 폴더
+SDF_DIR = "./baked_sdfs"             
+OUTPUT_DIR = "./generated_trajectories"    
 RETARGETING_CONFIG_PATH = "./custom_allegro_right_position.yml"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -56,7 +56,6 @@ for npz_path in npz_files:
     print(f" 📦 Processing: {obj_action} (Object: {obj_name})")
     print("==================================================")
     
-    # 1. 동적 파일 경로 생성
     sdf_file_path = os.path.join(SDF_DIR, f"{obj_name}_sdf_res64.pt")
     output_filename = f"allegro_limitloss_s1_{obj_action}_nn.npy"
     output_filepath = os.path.join(OUTPUT_DIR, output_filename)
@@ -66,7 +65,6 @@ for npz_path in npz_files:
         print(f" ⚠️ Skipping {obj_action}: SDF file not found ({sdf_file_path})")
         continue
 
-    # 2. 데이터 로드
     data = np.load(npz_path, allow_pickle=True)
     rhand_params = data['rhand'].item()['params']
     body_params = data['body'].item()['params']
@@ -77,7 +75,6 @@ for npz_path in npz_files:
     n_frames = data['n_frames']
     gender = str(data['gender'])
 
-    # 3. SMPL-X 초기화 (프레임 수가 다르므로 매번 새로 생성해야 함)
     hand_model = smplx.create(MODEL_PATH, model_type='smplx', gender=gender, 
                               use_pca=False, flat_hand_mean=True, batch_size=n_frames)
 
@@ -91,7 +88,6 @@ for npz_path in npz_files:
     joints_3d = output.joints.detach().numpy()  
     verts_3d = output.vertices.detach().numpy() 
 
-    # 4. Custom Optimizer 주입 (물체가 바뀌었으므로 SDF 엔진도 새로 교체!)
     config = get_retargeting_config(RETARGETING_CONFIG_PATH)
     retargeting = config.build() 
     default_optimizer = retargeting.optimizer
@@ -116,7 +112,6 @@ for npz_path in npz_files:
     )
     retargeting.optimizer = my_custom_optimizer
 
-    # 5. 프레임 최적화 루프
     trajectory_list = []
     for i in tqdm(range(n_frames), desc=f"   -> Optimizing [SDF + M_simple]"):
         current_obj_transl = obj_transl[i]

@@ -12,7 +12,7 @@ warnings.filterwarnings('ignore')
 
 print("=== 1. Setting Up Absolute Paths ===")
 SMPLX_MODEL_PATH = "C:/4-1/KIAT/models"
-TRAJECTORY_FILE = "C:/4-1/KIAT/Codes/generated_trajectories/allegro_attloss_s1_cup_drink_1_nn.npy" 
+TRAJECTORY_FILE = "C:/4-1/KIAT/Codes/generated_trajectories/allegro_originalloss_s1_cup_drink_1_drop.npy" 
 OBJ_MESH_FILE = "C:/4-1/KIAT/GRAB/dataset_unzipped/tools/object_meshes/contact_meshes/cup.ply"
 GRAB_NPZ_FILE = "C:/4-1/KIAT/GRAB/dataset_unzipped/grab/s1/cup_drink_1.npz"
 URDF_PATH = "C:/4-1/KIAT/allegro_hand_description/allegro_hand_description/urdf/allegro_hand_description_right.urdf"
@@ -86,7 +86,6 @@ combined_scene.add_geometry(obj_mesh, node_name='obj_node')
 combined_scene.add_geometry(human_mesh_template, geom_name='human_hand_geom', node_name='human_hand_node')
 
 for node_name in robot_urdf.scene.graph.nodes_geometry:
-    # 🚨 1번 수정: Absolute Transform 사용
     absolute_transform, geom_name = robot_urdf.scene.graph.get(node_name)
     geom = robot_urdf.scene.geometry[geom_name]
     geom.visual.face_colors = [255, 100, 100, 180] 
@@ -105,11 +104,9 @@ T_wrist_0 = np.dot(tf.translation_matrix(wrist_transl_xyz_0),
                    tf.euler_matrix(wrist_rot_rpy_0[0], wrist_rot_rpy_0[1], wrist_rot_rpy_0[2], axes='sxyz'))
 
 for node_name in robot_urdf.scene.graph.nodes_geometry:
-    # 🚨 1번 수정: Absolute Transform 기반 렌더링
     abs_transform_in_urdf_0, _ = robot_urdf.scene.graph.get(node_name)
     combined_scene.graph.update(f"robot_{node_name}", matrix=np.dot(T_wrist_0, abs_transform_in_urdf_0))
     
-# 🚨 2번 수정: 물체의 올바른 위치 계산 및 세팅
 initial_obj_rot_matrix, _ = cv2.Rodrigues(initial_obj_orient_aa_0)
 T_obj_0 = np.eye(4)
 T_obj_0[:3, :3] = initial_obj_rot_matrix.T
@@ -117,7 +114,7 @@ T_obj_0[:3, 3] = initial_obj_transl_0
 
 combined_scene.graph.update("obj_node", matrix=T_obj_0) 
 
-combined_scene.set_camera(distance=1, center=initial_obj_transl_0, angles = (np.pi/3, 0, 0))
+combined_scene.set_camera(distance=3, center=initial_obj_transl_0, angles = (np.pi/3, 0, 0))
 
 
 print("\n=== 5. Launching Animated Viewer ===")
@@ -147,14 +144,11 @@ def update_callback(scene):
     T_object = np.dot(T_object_transl, T_object_rot)
 
     joint_dict = {name: angle for name, angle in zip(ALLEGRO_JOINT_NAMES, finger_angles)}
-    robot_urdf.update_cfg(joint_dict) # 내부 FK 계산 업데이트
+    robot_urdf.update_cfg(joint_dict) 
 
-    # 사람 손 Mesh 업데이트
     scene.geometry['human_hand_geom'].vertices = human_verts_3d[frame_idx]
 
-    # 로봇 손 관절 위치 업데이트
     for node_name in robot_urdf.scene.graph.nodes_geometry:
-        # 🚨 1번 수정: Absolute Transform (URDF 베이스 기준)을 얻어와 T_wrist를 곱함!
         abs_transform_in_urdf, _ = robot_urdf.scene.graph.get(node_name)
         final_transform = np.dot(T_wrist, abs_transform_in_urdf)
         scene.graph.update(f"robot_{node_name}", matrix=final_transform)
